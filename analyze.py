@@ -49,6 +49,43 @@ def analyze_trades_by_lotsize():
 
     print(grouped)
 
+
+def check_current_position():
+    # Check if current position is closed
+    current_position = mt5.positions_get()
+    if current_position:
+        # make into dataframe and add header
+        df_current_position = pd.DataFrame(current_position)
+        df_current_position.columns = current_position[0]._asdict().keys()
+        print(df_current_position)
+    else:
+        print("No current position")
+
+def check_trade_history():
+    # Check if trade history is closed
+    trade_history = mt5.history_deals_get(datetime.now() - pd.Timedelta(days=1), datetime.now())
+    if trade_history:
+        df_trade_history = pd.DataFrame(trade_history)
+        df_trade_history.columns = trade_history[0]._asdict().keys()
+        # show only lot, price tp sl and profit
+        unique_volumes = df_trade_history['volume'].unique()
+        for volume in unique_volumes:
+            df_volume = df_trade_history[df_trade_history['volume'] == volume]
+            df_volume.loc[:, 'profit'] = df_volume['profit'].astype(int)
+            df_volume_win = df_volume[(df_volume['profit']) > 0]  
+            df_volume_loss = df_volume[(df_volume['profit']) <= 0]
+            df_percentage_win = len(df_volume_win) / len(df_volume) * 100
+
+            total_profit = df_volume_win['profit'].sum()
+            total_loss = df_volume_loss['profit'].sum()
+            
+            print(f"Volume {volume} win: {len(df_volume_win)}, loss: {len(df_volume_loss)}, "
+                  f"win rate: {df_percentage_win:.2f}%, total profit: ${total_profit}, total loss: ${total_loss}, clean profit: ${total_profit + total_loss}")
+            
+    else:
+        print("No trade history")
+    
+
 # Fetch historical data
 def get_historical_data(symbol, timeframe, num_bars):
     rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, num_bars)
@@ -63,7 +100,8 @@ def main():
     if not login_mt5(account=239634700, password="B6D4YAMdemo_", server="Exness-MT5Trial6"):
         return
 
-    analyze_trades_by_lotsize()
+    # analyze_trades_by_lotsize()
+    check_trade_history()
     
 
 if __name__ == "__main__":

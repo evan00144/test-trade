@@ -171,6 +171,8 @@ def execute_trade(symbol, signal, df):
         print(f"Order failed: {result.comment}")
     else:
         print(f"Executed {lot_size} lots at {price} | SL: {sl:.2f} | TP: {tp:.2f}")
+        with open('trades_h1.csv', 'a') as f:
+            f.write(f"{datetime.now()},{symbol},{signal},price:{price},sl:{sl},tp:{tp},lot_size:{lot_size}\n")
 
 # Main trading loop
 def main():

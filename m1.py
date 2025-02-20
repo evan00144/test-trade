@@ -28,104 +28,40 @@ def get_historical_data(symbol, timeframe, num_bars):
     df['time'] = pd.to_datetime(df['time'], unit='s')
     return df
 
-# Calculate Average True Range (ATR)
-def calculate_atr(df, period=14):
-    high = df['high']
-    low = df['low']
-    close = df['close']
-    
-    tr = np.maximum(high - low, 
-                   np.maximum(abs(high - close.shift()), 
-                            abs(low - close.shift())))
-    df['ATR'] = tr.rolling(period).mean()
-    return df
-
-# Calculate Simple Moving Average
-def calculate_sma(df, period=200):
-    df['SMA'] = df['close'].rolling(period).mean()
-    return df
-
-# Detect support and resistance levels
-def detect_support_resistance(df, window=20, touch_threshold=2):
-    df = df.copy()
-    df['resistance'] = None
-    df['support'] = None
-
-    for i in range(window, len(df)):
-        current_high = df['high'].iloc[i-window:i].max()
-        current_low = df['low'].iloc[i-window:i].min()
-
-
-        resistance_touches = sum((df['high'].iloc[i-window:i] >= current_high * 0.999) & 
-                                (df['high'].iloc[i-window:i] <= current_high * 1.001))
-        support_touches = sum((df['low'].iloc[i-window:i] >= current_low * 0.999) & 
-                             (df['low'].iloc[i-window:i] <= current_low * 1.001))
-
-        if resistance_touches >= touch_threshold:
-            df.loc[i, 'resistance'] = current_high
-        if support_touches >= touch_threshold:
-            df.loc[i, 'support'] = current_low
-
-    return df
 
 # Generate trading signals with confirmation and trend filter
-def generate_signal(df):
-    current_close = df['close'].iloc[-1]
-    previous_close = df['close'].iloc[-2]
-    resistance = df['resistance'].dropna().iloc[-1] if not df['resistance'].dropna().empty else None
-    support = df['support'].dropna().iloc[-1] if not df['support'].dropna().empty else None
-    sma_value = df['SMA'].iloc[-1]
-    
-    # Breakout confirmation (two consecutive closes beyond S/R)
-    buy_condition = (resistance and 
-                    current_close > resistance and 
-                    previous_close > resistance and 
-                    current_close > sma_value)
-
-
-
-    print("\nBuy Condition",resistance,current_close > resistance,previous_close > resistance,current_close > sma_value)
-    
-    sell_condition = (support and 
-                     current_close < support and 
-                     previous_close < support and 
-                     current_close < sma_value)
-
-    print("Sell Condition",support,current_close < support,previous_close < support,current_close < sma_value)
-    
-    if buy_condition:
-        return 'BUY'
-    elif sell_condition:
-        return 'SELL'
-    else:
+def generate_signal(df, lowest, highest):
+    # Ensure there are enough data points
+    if len(df) < 3:
         return 'HOLD'
+    
+    # Get the necessary data points
+    prev_close = df['close'].iloc[-2]
+    prev_highs = df['high'].iloc[-4:-2]
+    prev_lows = df['low'].iloc[-4:-2]
+
+    # Buy signal: previous close > 2 previous highs
+    print(f'prev_close: {prev_close}, prev_highs: {prev_highs.max()}, prev_lows: {prev_lows.min()}')
+    if prev_close > prev_highs.max():
+        lowest = prev_lows.min()
+        with open('signal.txt', 'a') as file:
+            file.write(f"BUY: {prev_close}\n")
+        return 'BUY', lowest, highest
+    
+    # Sell signal: previous close < 2 previous lows
+    elif prev_close < prev_lows.min():
+        highest = prev_highs.max()
+        with open('signal.txt', 'a') as file:
+            file.write(f"SELL: {prev_close}\n")
+        return 'SELL', lowest, highest
+    
+    # Hold if neither condition is met
+    return 'HOLD', lowest, highest
 
 # Dynamic position sizing based on volatility
-def calculate_position_size(df, risk_percent=0.02):
-    return 0.01
-    account_info = mt5.account_info()
-    if not account_info:
-        return 0.01  # Default lot size
-    
-    balance = account_info.balance
-    atr = df['ATR'].iloc[-1]
-    price = df['close'].iloc[-1]
-    
-    if atr <= 0 or price <= 0:
-        return 0.01  # Fallback
-    
-    # Calculate risk amount in dollars
-    risk_amount = balance * risk_percent
-    
-    # Calculate position size (1 pip = $1 per 0.01 movement for XAUUSD)
-    lot_size = (risk_amount / atr) / 100  # Adjusted for XAUUSD pricing
-    
-    # Apply broker constraints
-    lot_size = max(0.01, min(lot_size, 50))  # Min 0.01, max 50 lots
-    return round(lot_size, 2)
 
 # Execute trade with enhanced features
-def execute_trade(symbol, signal, df):
+def execute_trade(symbol, signal, df, lowest, highest):
     symbol_info = mt5.symbol_info(symbol)
     if not symbol_info:
         print(f"Failed to get info for {symbol}")
@@ -140,19 +76,16 @@ def execute_trade(symbol, signal, df):
     price = mt5.symbol_info_tick(symbol).ask if signal == 'BUY' else mt5.symbol_info_tick(symbol).bid
     
     # Calculate position size
-    lot_size = calculate_position_size(df)
-    
-    # Calculate stop loss and take profit
-    atr = df['ATR'].iloc[-1]
+    lot_size = 0.06
+    print(f"lowest: {lowest}, highest: {highest}")
+    multiplier = 1
     if signal == 'BUY':
-        sl = price - 2 * atr
-        tp = price + 3 * atr  # 1.5:1 risk-reward ratio
+        sl = lowest - 0.2
+        tp = price + 0.5
     else:
-        sl = price + 2 * atr
-        tp = price - 3 * atr
+        sl = highest + 0.2
+        tp = price - 0.5
 
-    print("SL",sl,"TP",tp)
-    
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -174,6 +107,9 @@ def execute_trade(symbol, signal, df):
     else:
         print(f"Executed {lot_size} lots at {price} | SL: {sl:.2f} | TP: {tp:.2f}")
 
+        with open('trades_m1.csv', 'a') as f:
+            f.write(f"{datetime.now()},{symbol},{signal},price:{price},sl:{sl},tp:{tp},lot_size:{lot_size}\n")
+
 # Main trading loop
 def main():
     symbol = "XAUUSD"
@@ -181,7 +117,7 @@ def main():
     num_bars = 500
     executed = 0
     window = 20
-    check_interval = 3  # 15 minutes
+    check_interval = 5  # 15 minutes
 
     if not initialize_mt5():
         return
@@ -192,32 +128,20 @@ def main():
 
     while True:
         try:
+            lowest = 0
+            highest = 0
             print(f"\n{datetime.now()} - Analyzing market...")
             df = get_historical_data(symbol, timeframe, num_bars)
-            df = calculate_sma(df, 200)
-            df = calculate_atr(df, 14)
-            df = detect_support_resistance(df, window)
+            signal, lowest, highest = generate_signal(df, lowest, highest)
             
-            signal = generate_signal(df)
-            
-            print(f"Price: {df['close'].iloc[-1]:.2f}")
-            print(f"SMA(200): {df['SMA'].iloc[-1]:.2f}")
-            print(f"ATR(14): {df['ATR'].iloc[-1]:.2f}")
-            if(df['resistance'].dropna().empty):
-                print("No resistance")
-            else:
-                print(f"Resistance: {df['resistance'].iloc[-1]}")
-            if(df['support'].dropna().empty):
-                print("No support")
-            else:
-                print(f"Support: {df['support'].iloc[-1]}")
             print(f"Signal: {signal}")
             print(f"Executed: {executed}")
 
-            # execute_trade(symbol, signal, df)
             if signal in ['BUY', 'SELL']:
-                execute_trade(symbol, signal, df)
+                execute_trade(symbol, signal, df, lowest, highest)
                 executed += 1
+            else:
+                print("No signal")
 
             time.sleep(check_interval)
 

@@ -119,7 +119,7 @@ def execute_trade(symbol, signal, df):
         return
 
 
-    lot_size = 0.05  # Adjust based on your risk management
+    lot_size = 0.1  # Adjust based on your risk management
 
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
@@ -144,6 +144,9 @@ def execute_trade(symbol, signal, df):
         print(f"Order failed: {result.comment}")
     else:
         print(f"Executed {lot_size} lots at {price} | SL: {sl:.2f} | TP: {tp:.2f}")
+        # TODO: add trade price sl tp lot size to csv
+        with open('trades_snr.csv', 'a') as f:
+            f.write(f"{datetime.now()},{symbol},{signal},price:{price},sl:{sl},tp:{tp},lot_size:{lot_size}\n")
 
 
 def main():
