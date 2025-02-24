@@ -116,6 +116,10 @@ def generate_signal(df):
     
     return 'HOLD'
 
+def calculate_position_size(self, symbol):
+    tick_value = mt5.symbol_info(symbol).trade_tick_value
+    risk_amount = mt5.account_info().equity * 1 / 100
+    return round(risk_amount / tick_value, 2)
 
 # Execute trade
 def execute_trade(symbol, signal, df):
@@ -150,7 +154,7 @@ def execute_trade(symbol, signal, df):
         return
 
 
-    lot_size = 0.1  # Adjust based on your risk management
+    lot_size = calculate_position_size(symbol)
 
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
@@ -200,7 +204,7 @@ def main():
             df = get_historical_data(symbol, timeframe, num_bars)
             df = detect_support_resistance(df, window=window)
             signal = generate_signal(df)
-
+            print(f"Position Size: {calculate_position_size(symbol)}")
             session, config = get_current_session(TRADE_SESSIONS)
             if session == "NewYork":
                 print("NewYork session dont trade")
