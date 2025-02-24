@@ -2,10 +2,28 @@ import MetaTrader5 as mt5
 import pandas as pd
 import time
 from datetime import datetime
+import pytz
 import warnings
 warnings.filterwarnings("ignore", category=pd.errors.ChainedAssignmentError)
 
 TARGET_PROFIT_PCT = 1.0  # Close position at 1% profit
+TRADE_SESSIONS = {
+    "Tokyo": {
+        "symbols": ["USDJPY"],
+        "time": ("00:00", "06:00"),
+        "strategy": "asian_range_breakout"
+    },
+    "London": {
+        "symbols": ["EURUSD", "GBPUSD"],
+        "time": ("06:00", "12:00"),
+        "strategy": "momentum_scalp"
+    },
+    "NewYork": {
+        "symbols": ["EURUSD", "GBPUSD"],
+        "time": ("12:00", "18:00"),
+        "strategy": "volatility_arbitrage"
+    }
+}
 
 # Initialize MT5 connection
 def initialize_mt5():
@@ -14,6 +32,19 @@ def initialize_mt5():
         mt5.shutdown()
         return False
     return True
+
+def get_current_session(self):
+        london_tz = pytz.timezone('Europe/London')
+        now = datetime.now(london_tz)
+        current_time = now.time()
+        
+        for session, config in self.sessions.items():
+            start = datetime.strptime(config["time"][0], "%H:%M").time()
+            end = datetime.strptime(config["time"][1], "%H:%M").time()
+            
+            if start <= current_time < end:
+                return session, config
+        return None, None
 
 # Login to MT5 account (modify with your credentials)
 def login_mt5(account, password, server):
@@ -169,12 +200,18 @@ def main():
             df = get_historical_data(symbol, timeframe, num_bars)
             df = detect_support_resistance(df, window=window)
             signal = generate_signal(df)
+
+            session, config = get_current_session(TRADE_SESSIONS)
+            if session is "NewYork":
+                print("NewYork session dont trade")
+                return
             
             print(f"Current Price: {df['close'].iloc[-1]:.2f}")
             print(f"Latest Resistance: {df['resistance'].iloc[-1]}" if not df['resistance'].dropna().empty else "No resistance")
             print(f"Latest Support: {df['support'].iloc[-1]}" if not df['support'].dropna().empty else "No support")
             print(f"Signal: {signal}")
             print(f"Executed: {executed}")
+
             if signal in ['BUY', 'SELL']:
                 execute_trade(symbol, signal, df)
                 executed += 1
