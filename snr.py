@@ -33,12 +33,12 @@ def initialize_mt5():
         return False
     return True
 
-def get_current_session(self):
+def get_current_session(sessions):
         london_tz = pytz.timezone('Europe/London')
         now = datetime.now(london_tz)
         current_time = now.time()
         
-        for session, config in self.sessions.items():
+        for session, config in sessions.items():
             start = datetime.strptime(config["time"][0], "%H:%M").time()
             end = datetime.strptime(config["time"][1], "%H:%M").time()
             
@@ -202,7 +202,7 @@ def main():
             signal = generate_signal(df)
 
             session, config = get_current_session(TRADE_SESSIONS)
-            if session is "NewYork":
+            if session == "NewYork":
                 print("NewYork session dont trade")
                 return
             
